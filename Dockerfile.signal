@@ -83,6 +83,9 @@ RUN sed -i "s/${TURASA_OLD}/${TURASA_VERSION}/g" \
 RUN rm -rf /opt/signal-cli-0.13.23 && \
     cp -a "/opt/signal-cli-${SIGNAL_CLI_VERSION}" /opt/signal-cli-0.13.23
 
+# Ensure all libs are readable by the signal-api user (COPY preserves source perms)
+RUN chmod -R a+rX /opt/signal-cli-0.13.23/
+
 # Clean up
 RUN rm -rf /tmp/patches /tmp/jars "/opt/signal-cli-${SIGNAL_CLI_VERSION}"
 
