@@ -150,9 +150,19 @@ esac
 lib_path="$SIGNAL_CLI_DIR/lib/libsignal_jni.${lib_ext}"
 if [ ! -f "$lib_path" ] || ([ "$(uname)" = "Linux" ] && [ "$LIB_ARCH" = "arm64" ]); then
     echo -ne "  Downloading native library (${LIB_ARCH})..."
-    if ! curl -sfL "https://raw.githubusercontent.com/bbernhard/signal-cli-rest-api/master/ext/libraries/libsignal-client/v${LIBSIGNAL_VERSION}/${LIB_ARCH}/libsignal_jni.${lib_ext}" \
-        -o "$lib_path" 2>/dev/null; then
-        fail "Failed to download native library"
+    lib_url="https://raw.githubusercontent.com/bbernhard/signal-cli-rest-api/master/ext/libraries/libsignal-client/v${LIBSIGNAL_VERSION}/${LIB_ARCH}/libsignal_jni.${lib_ext}"
+    lib_ok=false
+    for attempt in 1 2 3; do
+        if curl -sfL --retry 2 --connect-timeout 15 "$lib_url" -o "$lib_path" 2>/dev/null; then
+            lib_ok=true
+            break
+        fi
+        [ "$attempt" -lt 3 ] && sleep 2
+    done
+    if [ "$lib_ok" = false ]; then
+        rm -f "$lib_path"
+        fail "Failed to download native library after 3 attempts"
+        fail "URL: $lib_url"
         exit 1
     fi
     echo -e " ${GREEN}done${NC}"
