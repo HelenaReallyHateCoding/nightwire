@@ -1614,12 +1614,7 @@ Return ONLY valid JSON, no markdown code blocks, no explanation."""
 
                     # Only process if sent to ourselves (the bot's number)
                     if destination and destination == self.account:
-                        sync_text = sent_message.get("message", "")
-                        # Ignore bot-generated responses (prevents feedback loop
-                        # between multiple linked bot instances)
-                        if sync_text and sync_text.startswith("[nightwire]"):
-                            return
-                        message_text = sync_text
+                        message_text = sent_message.get("message", "")
                         attachments_list = sent_message.get("attachments") or []
                         source = self.account
 
@@ -1636,6 +1631,12 @@ Return ONLY valid JSON, no markdown code blocks, no explanation."""
                 if image_paths:
                     logger.info("attachments_processed", count=len(image_paths),
                                 sender="..." + source[-4:])
+
+            # Ignore bot-generated messages (prevents feedback loop between
+            # multiple linked instances — each instance's responses arrive as
+            # dataMessages on other instances sharing the same account)
+            if message_text and message_text.strip().startswith("[nightwire]"):
+                return
 
             # Ignore receipts, typing indicators, and other message types
             # Allow messages through if they have attachments even without text
