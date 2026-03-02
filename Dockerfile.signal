@@ -31,14 +31,14 @@ COPY patches/signal-cli/ /tmp/patches/
 
 # Download signal-cli JVM edition
 RUN curl -sfL \
-    "https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CLI_VERSION}/signal-cli-${SIGNAL_CLI_VERSION}-Linux.tar.gz" \
+    "https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CLI_VERSION}/signal-cli-${SIGNAL_CLI_VERSION}.tar.gz" \
     | tar xz -C /opt/
 
 # Download native library for the build platform's architecture
 RUN ARCH=$(uname -m) && \
     case "$ARCH" in \
         aarch64|arm64) LIB_ARCH="arm64" ;; \
-        x86_64|amd64)  LIB_ARCH="amd64" ;; \
+        x86_64|amd64)  LIB_ARCH="x86-64" ;; \
         *) echo "Unsupported architecture: $ARCH" && exit 1 ;; \
     esac && \
     curl -sfL \

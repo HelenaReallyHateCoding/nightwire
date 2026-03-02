@@ -25,7 +25,7 @@ SIGNAL_CLI_VERSION="0.13.24"
 TURASA_VERSION="2.15.3_unofficial_138"
 TURASA_OLD="2.15.3_unofficial_137"
 LIBSIGNAL_VERSION="0.87.0"
-PATCH_VERSION="3"  # Bump when patch logic changes
+PATCH_VERSION="4"  # Bump when patch logic changes
 PATCH_REQUIRED=true
 
 # Turasa JARs to upgrade (groupId:artifactId)
@@ -125,13 +125,8 @@ os.replace(tmp_out, jar)  # atomic on same filesystem
 # Step 1: Download signal-cli JVM edition
 # ---------------------------------------------------------------------------
 if [ ! -f "$SIGNAL_CLI_DIR/bin/signal-cli" ]; then
-    os_name="Linux"
-    case "$(uname)" in
-        Darwin) os_name="macOS" ;;
-    esac
-
     echo -ne "  Downloading signal-cli ${SIGNAL_CLI_VERSION}..."
-    if ! curl -sfL "https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CLI_VERSION}/signal-cli-${SIGNAL_CLI_VERSION}-${os_name}.tar.gz" \
+    if ! curl -sfL "https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CLI_VERSION}/signal-cli-${SIGNAL_CLI_VERSION}.tar.gz" \
         | tar xz -C "$INSTALL_DIR/" 2>/dev/null; then
         fail "Failed to download signal-cli"
         exit 1
@@ -148,7 +143,7 @@ lib_ext="so"
 case "$ARCH" in
     aarch64)       LIB_ARCH="arm64" ;;
     arm64)         LIB_ARCH="arm64"; [ "$(uname)" = "Darwin" ] && lib_ext="dylib" ;;
-    x86_64|amd64)  LIB_ARCH="amd64" ;;
+    x86_64|amd64)  LIB_ARCH="x86-64" ;;
     *)
         fail "Unsupported architecture: $ARCH"
         exit 1

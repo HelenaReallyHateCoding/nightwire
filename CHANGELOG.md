@@ -5,6 +5,13 @@ All notable changes to nightwire (formerly sidechannel) will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.10] - 2026-03-02
+
+### Fixed
+- Patch script: signal-cli download URL 404 — JVM edition filename changed from `signal-cli-VERSION-Linux.tar.gz` to `signal-cli-VERSION.tar.gz`
+- Patch script: native library download URL 404 — architecture directory changed from `amd64` to `x86-64` in bbernhard's repo
+- Dockerfile.signal: same two URL fixes for Docker-based installs
+
 ## [2.5.9] - 2026-03-01
 
 ### Added
