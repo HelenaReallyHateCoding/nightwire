@@ -269,7 +269,11 @@ fi
 launcher="$SIGNAL_CLI_DIR/bin/signal-cli"
 if grep -q "$TURASA_OLD" "$launcher" 2>/dev/null; then
     echo -ne "  Updating classpath references..."
-    sed -i "s/${TURASA_OLD}/${TURASA_VERSION}/g" "$launcher"
+    if [ "$(uname)" = "Darwin" ]; then
+        sed -i '' "s/${TURASA_OLD}/${TURASA_VERSION}/g" "$launcher"
+    else
+        sed -i "s/${TURASA_OLD}/${TURASA_VERSION}/g" "$launcher"
+    fi
     echo -e " ${GREEN}done${NC}"
 fi
 info "Classpath updated"
