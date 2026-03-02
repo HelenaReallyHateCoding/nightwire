@@ -395,76 +395,236 @@ done
 # =============================================================================
 if [ "$UNINSTALL" = true ]; then
     echo ""
-    echo -e "${CYAN}nightwire uninstaller${NC}"
+    echo -e "${CYAN}╔══════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║       nightwire uninstaller          ║${NC}"
+    echo -e "${CYAN}╚══════════════════════════════════════╝${NC}"
     echo ""
 
-    REMOVED_SOMETHING=false
+    REMOVED=()
 
-    # --- Stop and disable systemd service (Linux) ---
+    # ── Step 1: Stop and remove services ──────────────────────────────────
+
+    # User-level systemd service (Linux)
     if [ "$(uname)" = "Linux" ] && command -v systemctl &> /dev/null; then
-        SERVICE_FILE="$HOME/.config/systemd/user/nightwire.service"
-        if systemctl --user is-active nightwire &> /dev/null || [ -f "$SERVICE_FILE" ]; then
-            echo -e "${BLUE}Removing systemd service...${NC}"
+        USER_SERVICE_FILE="$HOME/.config/systemd/user/nightwire.service"
+        if systemctl --user is-active nightwire &> /dev/null || [ -f "$USER_SERVICE_FILE" ]; then
+            echo -e "${BLUE}Stopping user systemd service...${NC}"
             systemctl --user stop nightwire 2>/dev/null || true
             systemctl --user disable nightwire 2>/dev/null || true
-            rm -f "$SERVICE_FILE"
+            rm -f "$USER_SERVICE_FILE"
             systemctl --user daemon-reload
-            echo -e "  ${GREEN}✓${NC} Service stopped and removed"
-            REMOVED_SOMETHING=true
+            echo -e "  ${GREEN}✓${NC} User service stopped and removed"
+            REMOVED+=("user systemd service")
+        fi
+
+        # System-level systemd service (may exist from older installs)
+        SYS_SERVICE=""
+        for name in signal-claude-bot nightwire; do
+            if [ -f "/etc/systemd/system/${name}.service" ]; then
+                SYS_SERVICE="/etc/systemd/system/${name}.service"
+                SYS_SERVICE_NAME="${name}"
+                break
+            fi
+        done
+        if [ -n "$SYS_SERVICE" ]; then
+            echo -e "${YELLOW}Found system-level service: ${SYS_SERVICE_NAME}.service${NC}"
+            flush_stdin
+            read -p "  Remove it? (requires sudo) [y/N] " -n 1 -r
+            echo ""
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                sudo systemctl stop "$SYS_SERVICE_NAME" 2>/dev/null || true
+                sudo systemctl disable "$SYS_SERVICE_NAME" 2>/dev/null || true
+                sudo rm -f "$SYS_SERVICE"
+                sudo systemctl daemon-reload
+                echo -e "  ${GREEN}✓${NC} System service ${SYS_SERVICE_NAME} removed"
+                REMOVED+=("system service ($SYS_SERVICE_NAME)")
+            else
+                echo "  Skipped system service removal"
+            fi
         fi
     fi
 
-    # --- Stop and remove launchd service (macOS) ---
+    # macOS launchd service
     if [ "$(uname)" = "Darwin" ]; then
         PLIST_FILE="$HOME/Library/LaunchAgents/com.nightwire.bot.plist"
         if [ -f "$PLIST_FILE" ]; then
             echo -e "${BLUE}Removing launchd service...${NC}"
             launchctl unload "$PLIST_FILE" 2>/dev/null || true
             rm -f "$PLIST_FILE"
-            echo -e "  ${GREEN}✓${NC} Service stopped and removed"
-            REMOVED_SOMETHING=true
+            echo -e "  ${GREEN}✓${NC} launchd service removed"
+            REMOVED+=("launchd service")
         fi
     fi
 
-    # --- Stop Docker containers ---
-    # Checks for legacy "nightwire" container from older Docker installs
+    # ── Step 2: Stop and remove Docker containers ─────────────────────────
+
     if command -v docker &> /dev/null; then
         for CONTAINER in signal-api nightwire; do
             if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER}$"; then
                 echo -e "${BLUE}Stopping Docker container: ${CONTAINER}...${NC}"
                 docker stop "$CONTAINER" 2>/dev/null || true
                 docker rm "$CONTAINER" 2>/dev/null || true
-                echo -e "  ${GREEN}✓${NC} Container $CONTAINER removed"
-                REMOVED_SOMETHING=true
+                echo -e "  ${GREEN}✓${NC} Container ${CONTAINER} removed"
+                REMOVED+=("container: $CONTAINER")
             fi
         done
+
+        # ── Step 3: Optionally remove Docker images ───────────────────────
+
+        DOCKER_IMAGES=()
+        for img in bbernhard/signal-cli-rest-api:latest nightwire-signal:latest nightwire-sandbox:latest; do
+            if docker image inspect "$img" &> /dev/null; then
+                DOCKER_IMAGES+=("$img")
+            fi
+        done
+        if [ ${#DOCKER_IMAGES[@]} -gt 0 ]; then
+            echo ""
+            echo -e "${YELLOW}Found Docker images:${NC}"
+            for img in "${DOCKER_IMAGES[@]}"; do
+                size=$(docker image inspect "$img" --format '{{.Size}}' 2>/dev/null || echo "0")
+                size_mb=$((size / 1024 / 1024))
+                echo "  - $img (~${size_mb}MB)"
+            done
+            flush_stdin
+            read -p "Remove these Docker images? [y/N] " -n 1 -r
+            echo ""
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                for img in "${DOCKER_IMAGES[@]}"; do
+                    docker rmi "$img" 2>/dev/null || true
+                done
+                echo -e "  ${GREEN}✓${NC} Docker images removed"
+                REMOVED+=("docker images")
+            else
+                echo "  Kept Docker images"
+            fi
+        fi
     fi
 
-    # --- Remove install directory (with confirmation) ---
+    # ── Step 4: Remove signal-cli patches and backups ─────────────────────
+
+    if [ -d "$INSTALL_DIR/signal-cli-${SIGNAL_CLI_VERSION}" ]; then
+        echo -e "${BLUE}Removing signal-cli patches...${NC}"
+        rm -rf "$INSTALL_DIR/signal-cli-${SIGNAL_CLI_VERSION}"
+        echo -e "  ${GREEN}✓${NC} Removed signal-cli-${SIGNAL_CLI_VERSION}/"
+        REMOVED+=("signal-cli patches")
+    fi
+
+    # Remove signal-data backup directories
+    backup_count=0
+    for bak in "$INSTALL_DIR"/signal-data.bak.*; do
+        if [ -d "$bak" ]; then
+            rm -rf "$bak"
+            backup_count=$((backup_count + 1))
+        fi
+    done
+    if [ $backup_count -gt 0 ]; then
+        echo -e "  ${GREEN}✓${NC} Removed $backup_count signal-data backup(s)"
+        REMOVED+=("signal-data backups")
+    fi
+
+    # ── Step 5: Data preservation prompt ──────────────────────────────────
+
+    HAS_DATA=false
+    [ -d "$SIGNAL_DATA_DIR" ] && HAS_DATA=true
+    [ -d "$DATA_DIR" ] && HAS_DATA=true
+
+    if [ "$HAS_DATA" = true ]; then
+        echo ""
+        echo -e "${YELLOW}Your data directories:${NC}"
+        [ -d "$SIGNAL_DATA_DIR" ] && echo "  - $SIGNAL_DATA_DIR  (Signal account)"
+        [ -d "$DATA_DIR" ] && echo "  - $DATA_DIR  (bot memory database)"
+        echo ""
+        flush_stdin
+        read -p "Keep this data? [Y/n] " -n 1 -r
+        echo ""
+        if [[ $REPLY =~ ^[Nn]$ ]]; then
+            [ -d "$SIGNAL_DATA_DIR" ] && rm -rf "$SIGNAL_DATA_DIR"
+            [ -d "$DATA_DIR" ] && rm -rf "$DATA_DIR"
+            echo -e "  ${GREEN}✓${NC} Data directories removed"
+            REMOVED+=("signal data" "bot data")
+        else
+            echo "  Kept data directories — remove manually later if needed"
+        fi
+    fi
+
+    # ── Step 6: Remove runtime artifacts ──────────────────────────────────
+
+    # Virtual environment
+    if [ -d "$VENV_DIR" ]; then
+        echo -e "${BLUE}Removing Python virtual environment...${NC}"
+        rm -rf "$VENV_DIR"
+        echo -e "  ${GREEN}✓${NC} Removed venv/"
+        REMOVED+=("venv")
+    fi
+
+    # Logs
+    if [ -d "$LOGS_DIR" ]; then
+        rm -rf "$LOGS_DIR"
+        echo -e "  ${GREEN}✓${NC} Removed logs/"
+        REMOVED+=("logs")
+    fi
+
+    # Marker and temp files
+    for f in .use-prepackaged-signal .patched run.sh link_qr.png; do
+        if [ -f "$INSTALL_DIR/$f" ]; then
+            rm -f "$INSTALL_DIR/$f"
+            REMOVED+=("$f")
+        fi
+    done
+
+    # Disable loginctl linger if no other user services remain (Linux only)
+    if [ "$(uname)" = "Linux" ] && command -v loginctl &> /dev/null; then
+        USER_SERVICE_DIR="$HOME/.config/systemd/user"
+        if loginctl show-user "$USER" --property=Linger 2>/dev/null | grep -q "Linger=yes"; then
+            remaining=$(find "$USER_SERVICE_DIR" -name '*.service' 2>/dev/null | wc -l)
+            if [ "$remaining" -eq 0 ]; then
+                echo -e "${BLUE}Disabling loginctl linger (no other user services)...${NC}"
+                sudo loginctl disable-linger "$USER" 2>/dev/null || true
+                echo -e "  ${GREEN}✓${NC} Linger disabled"
+                REMOVED+=("loginctl linger")
+            fi
+        fi
+    fi
+
+    # ── Step 7: Remove install directory ──────────────────────────────────
+
     if [ -d "$INSTALL_DIR" ]; then
         echo ""
-        echo -e "${YELLOW}The install directory contains your configuration and data:${NC}"
-        echo -e "  ${CYAN}$INSTALL_DIR${NC}"
-        echo ""
-        echo "  This includes settings.yaml, .env (API keys), Signal data,"
-        echo "  and any plugin data."
-        echo ""
-        read -p "Remove install directory? [y/N] " -n 1 -r
+        # Show what's left
+        remaining_items=$(ls -A "$INSTALL_DIR" 2>/dev/null | head -20)
+        if [ -n "$remaining_items" ]; then
+            echo -e "${YELLOW}Remaining files in ${INSTALL_DIR}:${NC}"
+            ls -A "$INSTALL_DIR" | while read -r item; do
+                if [ -d "$INSTALL_DIR/$item" ]; then
+                    echo "  📁 $item/"
+                else
+                    echo "  📄 $item"
+                fi
+            done
+            echo ""
+        fi
+        flush_stdin
+        read -p "Remove entire install directory ($INSTALL_DIR)? [y/N] " -n 1 -r
         echo ""
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             rm -rf "$INSTALL_DIR"
             echo -e "  ${GREEN}✓${NC} Removed $INSTALL_DIR"
-            REMOVED_SOMETHING=true
+            REMOVED+=("install directory")
         else
             echo "  Kept $INSTALL_DIR"
         fi
     fi
 
-    if [ "$REMOVED_SOMETHING" = true ]; then
-        echo ""
-        echo -e "${GREEN}nightwire has been uninstalled.${NC}"
+    # ── Summary ───────────────────────────────────────────────────────────
+
+    echo ""
+    if [ ${#REMOVED[@]} -gt 0 ]; then
+        echo -e "${GREEN}nightwire uninstalled.${NC} Removed:"
+        for item in "${REMOVED[@]}"; do
+            echo -e "  ${GREEN}✓${NC} $item"
+        done
     else
-        echo -e "${YELLOW}Nothing to uninstall.${NC} No service, containers, or install directory found."
+        echo -e "${YELLOW}Nothing to uninstall.${NC} No services, containers, or install directory found."
         echo ""
         echo "  Expected install dir: $INSTALL_DIR"
         echo "  Set NIGHTWIRE_DIR if installed elsewhere."
